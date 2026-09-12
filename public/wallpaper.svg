@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- Sky gradient -->
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="40%" y2="100%">
+      <stop offset="0%" stop-color="#0b2559" />
+      <stop offset="35%" stop-color="#144287" />
+      <stop offset="65%" stop-color="#2563eb" />
+      <stop offset="85%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#fed7aa" />
+    </linearGradient>
+
+    <!-- Sunrise Sun Glow -->
+    <radialGradient id="sunGlow" cx="84%" cy="72%" r="45%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="15%" stop-color="#fef08a" stop-opacity="0.95" />
+      <stop offset="35%" stop-color="#f97316" stop-opacity="0.8" />
+      <stop offset="65%" stop-color="#0284c7" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#0b2559" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Lake Water Gradient -->
+    <linearGradient id="waterGrad" x1="0%" y1="0%" x2="30%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="40%" stop-color="#1e40af" />
+      <stop offset="75%" stop-color="#1d4ed8" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <!-- Lake Sun Reflection -->
+    <linearGradient id="waterReflection" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.85" />
+      <stop offset="30%" stop-color="#fb923c" stop-opacity="0.65" />
+      <stop offset="70%" stop-color="#f59e0b" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#1e3a8a" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Sky Canvas -->
+  <rect width="1920" height="1080" fill="url(#skyGrad)" />
+  
+  <!-- Sunrise Atmosphere -->
+  <rect width="1920" height="1080" fill="url(#sunGlow)" />
+
+  <!-- Watermark Calendar Icon in Background (Top Right) -->
+  <g opacity="0.08" transform="translate(1300, 50) scale(1.4)">
+    <rect x="80" y="100" width="340" height="300" rx="50" fill="none" stroke="#ffffff" stroke-width="32" />
+    <rect x="150" y="60" width="36" height="70" rx="18" fill="#ffffff" />
+    <rect x="310" y="60" width="36" height="70" rx="18" fill="#ffffff" />
+    <circle cx="360" cy="350" r="80" fill="none" stroke="#ffffff" stroke-width="28" />
+    <path d="M 330 350 L 350 370 L 390 330" fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- Distant Mountains Layer 1 -->
+  <path d="M 0 760 Q 220 710 480 730 T 960 700 T 1400 715 Q 1650 670 1920 730 L 1920 1080 L 0 1080 Z" fill="#1e3a8a" opacity="0.55" />
+
+  <!-- Mid-distance Mountain Range Layer 2 -->
+  <path d="M 0 780 Q 280 735 600 765 T 1150 720 T 1600 700 Q 1780 735 1920 750 L 1920 1080 L 0 1080 Z" fill="#172554" opacity="0.8" />
+
+  <!-- Foreground Foothills Layer 3 -->
+  <path d="M 0 810 Q 320 780 700 800 T 1400 770 Q 1700 790 1920 810 L 1920 1080 L 0 1080 Z" fill="#0f172a" />
+
+  <!-- Lake Water Surface -->
+  <rect y="810" width="1920" height="270" fill="url(#waterGrad)" />
+
+  <!-- Golden Sun Reflections on Lake Surface -->
+  <path d="M 1480 810 L 1720 810 L 1780 1080 L 1400 1080 Z" fill="url(#waterReflection)" filter="blur(8px)" />
+
+  <!-- Water Ripple Lines -->
+  <line x1="1420" y1="830" x2="1680" y2="830" stroke="#fef08a" stroke-width="3" opacity="0.6" stroke-linecap="round" />
+  <line x1="1380" y1="855" x2="1730" y2="855" stroke="#fed7aa" stroke-width="4" opacity="0.55" stroke-linecap="round" />
+  <line x1="1450" y1="885" x2="1700" y2="885" stroke="#fde047" stroke-width="5" opacity="0.5" stroke-linecap="round" />
+  <line x1="1350" y1="920" x2="1750" y2="920" stroke="#fbbf24" stroke-width="5" opacity="0.45" stroke-linecap="round" />
+  <line x1="1400" y1="965" x2="1710" y2="965" stroke="#f97316" stroke-width="4" opacity="0.4" stroke-linecap="round" />
+  <line x1="1320" y1="1015" x2="1760" y2="1015" stroke="#fb923c" stroke-width="3" opacity="0.3" stroke-linecap="round" />
+</svg>

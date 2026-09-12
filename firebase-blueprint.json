@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account information and notification preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name of the user" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "phone": { "type": "string", "description": "User WhatsApp phone number" },
+        "avatar": { "type": "string", "description": "Optional avatar URL or initials" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" },
+        "preferences": {
+          "type": "object",
+          "description": "User notification and theme settings"
+        }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Routine schedule task or appointment item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique task ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "title": { "type": "string", "description": "Title of the task", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "description": "Optional details", "maxLength": 2000 },
+        "categoryId": { "type": "string", "description": "Category ID reference" },
+        "date": { "type": "string", "description": "Task date in YYYY-MM-DD format" },
+        "startTime": { "type": "string", "description": "Start time in HH:MM format" },
+        "endTime": { "type": "string", "description": "End time in HH:MM format" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "cancelled", "overdue"] },
+        "reminder": { "type": "object", "description": "Reminder configuration" },
+        "recurrence": { "type": "object", "description": "Recurrence configuration" },
+        "completedAt": { "type": "string", "description": "ISO timestamp of completion" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["id", "userId", "title", "categoryId", "date", "startTime", "endTime", "priority", "status"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Task organizational category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Category ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "name": { "type": "string", "description": "Category name", "minLength": 1, "maxLength": 50 },
+        "color": { "type": "string", "description": "Tailwind color or hex" },
+        "icon": { "type": "string", "description": "Lucide icon name" },
+        "isDefault": { "type": "boolean", "description": "Whether system default" },
+        "order": { "type": "number", "description": "Display order" }
+      },
+      "required": ["id", "userId", "name", "color", "icon"]
+    },
+    "NotificationLog": {
+      "title": "NotificationLog",
+      "description": "Log of sent WhatsApp, email, or system reminders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Log ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "taskId": { "type": "string", "description": "Referenced task ID" },
+        "taskTitle": { "type": "string", "description": "Referenced task title" },
+        "channel": { "type": "string", "enum": ["whatsapp", "email", "system"] },
+        "status": { "type": "string", "enum": ["sent", "failed", "scheduled"] },
+        "timestamp": { "type": "string", "description": "ISO timestamp" },
+        "recipient": { "type": "string", "description": "Email or phone number" },
+        "message": { "type": "string", "description": "Body preview" }
+      },
+      "required": ["id", "userId", "taskId", "channel", "status", "timestamp", "recipient"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "User task items"
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "User categories"
+    },
+    "/users/{userId}/logs/{logId}": {
+      "schema": "NotificationLog",
+      "description": "User notification logs"
+    }
+  }
+}

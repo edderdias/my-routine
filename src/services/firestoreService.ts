@@ -11,8 +11,8 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Category, NotificationLog, Task, User, UserSettings } from '../types';
-import { DEFAULT_CATEGORIES, createDefaultSettings } from './storage';
+import { Category, NotificationLog, Task, User, UserSettings, WorkType } from '../types';
+import { DEFAULT_CATEGORIES, DEFAULT_WORK_TYPES, createDefaultSettings } from './storage';
 
 // Helper to remove undefined fields because Firestore throws on undefined
 function cleanForFirestore<T extends Record<string, any>>(obj: T): T {
@@ -58,6 +58,12 @@ export const firestoreService = {
             ...cat,
             userId: user.id,
           }));
+        }
+
+        // Initialize default professional work types for this user in subcollection
+        const workTypeColRef = collection(db, 'users', user.id, 'workTypes');
+        for (const wt of DEFAULT_WORK_TYPES) {
+          await setDoc(doc(workTypeColRef, wt.id), cleanForFirestore(wt));
         }
       }
     } catch (err) {
@@ -106,6 +112,30 @@ export const firestoreService = {
       },
       (error) => {
         console.error('Firestore categories subscribe error:', error);
+      }
+    );
+  },
+
+  // Real-time listener for professional work types
+  subscribeWorkTypes(userId: string, onUpdate: (workTypes: WorkType[]) => void): Unsubscribe {
+    if (!userId) {
+      onUpdate(DEFAULT_WORK_TYPES);
+      return () => {};
+    }
+
+    const workTypesCol = collection(db, 'users', userId, 'workTypes');
+    return onSnapshot(
+      workTypesCol,
+      (snapshot) => {
+        if (snapshot.empty) {
+          onUpdate(DEFAULT_WORK_TYPES);
+        } else {
+          const workTypes: WorkType[] = snapshot.docs.map((docSnap) => docSnap.data() as WorkType);
+          onUpdate(workTypes);
+        }
+      },
+      (error) => {
+        console.error('Firestore work types subscribe error:', error);
       }
     );
   },
@@ -183,6 +213,18 @@ export const firestoreService = {
   async deleteCategory(userId: string, categoryId: string): Promise<void> {
     const catDoc = doc(db, 'users', userId, 'categories', categoryId);
     await deleteDoc(catDoc);
+  },
+
+  // Save or update a professional work type (persisted so custom types can be reused later)
+  async saveWorkType(userId: string, workType: WorkType): Promise<void> {
+    const wtDoc = doc(db, 'users', userId, 'workTypes', workType.id);
+    await setDoc(wtDoc, cleanForFirestore(workType));
+  },
+
+  // Delete a professional work type
+  async deleteWorkType(userId: string, workTypeId: string): Promise<void> {
+    const wtDoc = doc(db, 'users', userId, 'workTypes', workTypeId);
+    await deleteDoc(wtDoc);
   },
 
   // Save log

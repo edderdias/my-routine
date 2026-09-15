@@ -12,11 +12,14 @@ import {
 } from 'lucide-react';
 import { useTasks } from '../../contexts/TaskContext';
 import { Task } from '../../types';
+import { getDisplayStatus } from '../../utils/taskStats';
+import { TASK_TYPE_COLORS, TASK_TYPE_LABELS, getCongregationalActivityLabel } from '../../utils/taskTypeVisuals';
 
 export const AgendaView: React.FC = () => {
   const {
     tasks,
     categories,
+    workTypes,
     selectedDate,
     setSelectedDate,
     setIsTaskFormOpen,
@@ -242,6 +245,13 @@ export const AgendaView: React.FC = () => {
                         const cat = categories.find(c => c.id === task.categoryId);
                         const isDone = task.status === 'completed';
                         const isOverdue = task.status === 'overdue';
+                        const type = task.taskType || 'personal';
+                        const workType = task.professional ? workTypes.find(w => w.id === task.professional?.workTypeId) : undefined;
+                        const relatedInfo = task.congregational
+                          ? `${getCongregationalActivityLabel(task.congregational.activityType)}${task.congregational.visitedPerson ? ` — ${task.congregational.visitedPerson}` : ''}`
+                          : workType
+                          ? `${workType.name}${task.title ? ` — ${task.title}` : ''}`
+                          : null;
 
                         return (
                           <div
@@ -284,6 +294,10 @@ export const AgendaView: React.FC = () => {
                                     ({task.startTime}{task.endTime ? ` - ${task.endTime}` : ''})
                                   </span>
 
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${TASK_TYPE_COLORS[type].bg} ${TASK_TYPE_COLORS[type].text}`}>
+                                    {TASK_TYPE_LABELS[type]}
+                                  </span>
+
                                   {cat && (
                                     <span
                                       className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-xs"
@@ -300,6 +314,12 @@ export const AgendaView: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
+
+                                {relatedInfo && (
+                                  <p className="text-[11px] text-slate-600 font-medium line-clamp-1 mt-0.5">
+                                    {relatedInfo}
+                                  </p>
+                                )}
 
                                 {task.description && (
                                   <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">

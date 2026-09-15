@@ -9,7 +9,7 @@ export const ReportsView: React.FC = () => {
     const total = tasks.length;
     const completed = tasks.filter(t => t.status === 'completed').length;
     const overdue = tasks.filter(t => t.status === 'overdue').length;
-    const pending = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length;
+    const pending = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress' || t.status === 'deferred').length;
 
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 

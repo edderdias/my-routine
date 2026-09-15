@@ -10,21 +10,52 @@ import {
   FileText,
   Mail,
   Phone,
-  CheckCircle2,
-  Sparkles
+  Sparkles,
+  User,
+  Users2,
+  Briefcase
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTasks } from '../../contexts/TaskContext';
 import {
-  Category,
+  CongregationalActivityType,
+  DeferralRecord,
   NotificationChannel,
   NotificationLeadTime,
   Priority,
   RecurrenceRule,
   Status,
-  Task
+  Task,
+  TaskType
 } from '../../types';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { DeferTaskModal } from './DeferTaskModal';
+import { CongregationalFields, CongregationalFieldsState } from './form/CongregationalFields';
+import { ProfessionalFields, ProfessionalFieldsState } from './form/ProfessionalFields';
+import { TASK_TYPE_LABELS } from '../../utils/taskTypeVisuals';
+
+const TASK_TYPE_OPTIONS: Array<{ id: TaskType; label: string; icon: React.ReactNode; activeClass: string }> = [
+  { id: 'personal', label: TASK_TYPE_LABELS.personal, icon: <User className="w-4 h-4" />, activeClass: 'bg-emerald-600 border-emerald-600' },
+  { id: 'congregational', label: TASK_TYPE_LABELS.congregational, icon: <Users2 className="w-4 h-4" />, activeClass: 'bg-indigo-600 border-indigo-600' },
+  { id: 'professional', label: TASK_TYPE_LABELS.professional, icon: <Briefcase className="w-4 h-4" />, activeClass: 'bg-amber-600 border-amber-600' },
+];
+
+const DEFAULT_CONGREGATIONAL: CongregationalFieldsState = {
+  activityType: 'meeting',
+  location: '',
+  summary: '',
+  personName: '',
+  visitedPerson: '',
+  companion: '',
+  theme: '',
+};
+
+const DEFAULT_PROFESSIONAL: ProfessionalFieldsState = {
+  requestDate: '',
+  requestedBy: '',
+  workTypeId: '',
+  summary: '',
+};
 
 export const TaskFormModal: React.FC = () => {
   const { user } = useAuth();
@@ -34,11 +65,17 @@ export const TaskFormModal: React.FC = () => {
     editingTask,
     setEditingTask,
     categories,
+    workTypes,
+    addWorkType,
     settings,
     addTask,
     updateTask,
     selectedDate,
+    addToast,
   } = useTasks();
+
+  const [taskType, setTaskType] = useState<TaskType>('personal');
+  const [pendingTypeChange, setPendingTypeChange] = useState<TaskType | null>(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -49,6 +86,12 @@ export const TaskFormModal: React.FC = () => {
   const [priority, setPriority] = useState<Priority>('normal');
   const [status, setStatus] = useState<Status>('pending');
   const [categoryId, setCategoryId] = useState<string>('cat-trabalho');
+  const [lastDeferral, setLastDeferral] = useState<DeferralRecord | undefined>(undefined);
+  const [showDeferModal, setShowDeferModal] = useState(false);
+
+  // Type-specific field groups
+  const [congregational, setCongregational] = useState<CongregationalFieldsState>(DEFAULT_CONGREGATIONAL);
+  const [professional, setProfessional] = useState<ProfessionalFieldsState>(DEFAULT_PROFESSIONAL);
 
   // Notification configuration
   const [notificationChannel, setNotificationChannel] = useState<NotificationChannel>(
@@ -61,7 +104,7 @@ export const TaskFormModal: React.FC = () => {
   const [targetPhone, setTargetPhone] = useState(user?.phone || settings.defaultPhone || '');
   const [targetEmail, setTargetEmail] = useState(user?.email || settings.defaultEmail || '');
 
-  // Recurrence
+  // Recurrence (personal tasks only)
   const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule>('none');
 
   // Recurrence confirmation prompt
@@ -71,6 +114,7 @@ export const TaskFormModal: React.FC = () => {
   // Populate when editing or opening
   useEffect(() => {
     if (editingTask) {
+      setTaskType(editingTask.taskType || 'personal');
       setTitle(editingTask.title);
       setDescription(editingTask.description || '');
       setDate(editingTask.date);
@@ -80,6 +124,9 @@ export const TaskFormModal: React.FC = () => {
       setPriority(editingTask.priority);
       setStatus(editingTask.status);
       setCategoryId(editingTask.categoryId);
+      setLastDeferral(editingTask.lastDeferral);
+      setCongregational({ ...DEFAULT_CONGREGATIONAL, ...editingTask.congregational });
+      setProfessional({ ...DEFAULT_PROFESSIONAL, ...editingTask.professional });
       setNotificationChannel(editingTask.notification.channel);
       setLeadTime(editingTask.notification.leadTime);
       setCustomMinutes(editingTask.notification.customMinutes || 20);
@@ -88,17 +135,18 @@ export const TaskFormModal: React.FC = () => {
       setRecurrenceRule(editingTask.recurrence.rule);
     } else {
       // New task default
+      setTaskType('personal');
       setTitle('');
       setDescription('');
       setDate(selectedDate || new Date().toISOString().slice(0, 10));
-      
+
       // Default start time to current rounded time + 30 min
       const now = new Date();
       now.setMinutes(Math.ceil((now.getMinutes() + 15) / 15) * 15);
       const h = String(now.getHours()).padStart(2, '0');
       const m = String(now.getMinutes()).padStart(2, '0');
       setStartTime(`${h}:${m}`);
-      
+
       // Default end time + 1 hour
       now.setHours(now.getHours() + 1);
       const eh = String(now.getHours()).padStart(2, '0');
@@ -108,6 +156,9 @@ export const TaskFormModal: React.FC = () => {
       setPriority('normal');
       setStatus('pending');
       setCategoryId(categories[0]?.id || 'cat-trabalho');
+      setLastDeferral(undefined);
+      setCongregational(DEFAULT_CONGREGATIONAL);
+      setProfessional({ ...DEFAULT_PROFESSIONAL, requestDate: selectedDate || new Date().toISOString().slice(0, 10) });
       setNotificationChannel(settings.defaultNotificationChannel || 'whatsapp');
       setLeadTime(settings.defaultLeadTime || '15m');
       setCustomMinutes(20);
@@ -124,11 +175,88 @@ export const TaskFormModal: React.FC = () => {
     setEditingTask(null);
   };
 
+  const handleTypeSelect = (newType: TaskType) => {
+    if (newType === taskType) return;
+
+    const hasExistingTypeData =
+      (taskType === 'congregational' && !!editingTask?.congregational) ||
+      (taskType === 'professional' && !!editingTask?.professional);
+
+    if (editingTask && hasExistingTypeData) {
+      setPendingTypeChange(newType);
+      return;
+    }
+
+    setTaskType(newType);
+  };
+
+  const confirmTypeChange = () => {
+    if (pendingTypeChange) {
+      setTaskType(pendingTypeChange);
+      setCongregational(DEFAULT_CONGREGATIONAL);
+      setProfessional({ ...DEFAULT_PROFESSIONAL, requestDate: date });
+    }
+    setPendingTypeChange(null);
+  };
+
+  const handleStatusSelect = (newStatus: Status) => {
+    if (newStatus === 'deferred') {
+      setShowDeferModal(true);
+      return;
+    }
+    setStatus(newStatus);
+  };
+
+  const handleConfirmDefer = (newDate: string, newStartTime: string, reason?: string) => {
+    setLastDeferral({
+      fromDate: date,
+      fromStartTime: startTime,
+      toDate: newDate,
+      toStartTime: newStartTime,
+      reason,
+      timestamp: new Date().toISOString(),
+    });
+    setDate(newDate);
+    setStartTime(newStartTime);
+    setStatus('deferred');
+    setShowDeferModal(false);
+  };
+
+  const validateBeforeSave = (): string | null => {
+    if (!title.trim()) return 'Informe o título da tarefa.';
+    if (taskType === 'congregational') {
+      if (!congregational.location.trim()) return 'Informe o local da atividade congregacional.';
+      if (congregational.activityType === 'visit' && !congregational.visitedPerson.trim()) {
+        return 'Informe o nome da pessoa que será visitada.';
+      }
+      if (congregational.activityType === 'commission' && !congregational.personName.trim()) {
+        return 'Informe o nome da pessoa relacionada à comissão.';
+      }
+      if (congregational.activityType === 'speech' && !congregational.theme.trim()) {
+        return 'Informe o tema do discurso.';
+      }
+    }
+    if (taskType === 'professional') {
+      if (!professional.requestDate) return 'Informe a data da solicitação.';
+      if (!professional.requestedBy.trim()) return 'Informe quem fez a solicitação.';
+      if (!professional.workTypeId) return 'Selecione o tipo de trabalho.';
+    }
+    if (status === 'deferred' && !lastDeferral) {
+      return 'Informe a nova data prevista para adiar esta tarefa.';
+    }
+    return null;
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
 
-    const taskPayload = {
+    const validationError = validateBeforeSave();
+    if (validationError) {
+      addToast({ type: 'error', title: 'Verifique os campos obrigatórios', message: validationError });
+      return;
+    }
+
+    const taskPayload: Omit<Task, 'id' | 'userId' | 'history' | 'createdAt' | 'updatedAt'> = {
       title: title.trim(),
       description: description.trim(),
       date,
@@ -138,15 +266,33 @@ export const TaskFormModal: React.FC = () => {
       priority,
       status,
       categoryId,
+      taskType,
+      congregational: taskType === 'congregational' ? {
+        activityType: congregational.activityType,
+        location: congregational.location.trim(),
+        summary: congregational.summary.trim() || undefined,
+        personName: congregational.activityType === 'commission' ? congregational.personName.trim() : undefined,
+        visitedPerson: congregational.activityType === 'visit' ? congregational.visitedPerson.trim() : undefined,
+        companion: congregational.activityType === 'visit' ? congregational.companion.trim() || undefined : undefined,
+        theme: congregational.activityType === 'speech' ? congregational.theme.trim() : undefined,
+      } : undefined,
+      professional: taskType === 'professional' ? {
+        requestDate: professional.requestDate,
+        requestedBy: professional.requestedBy.trim(),
+        workTypeId: professional.workTypeId,
+        summary: professional.summary.trim() || undefined,
+      } : undefined,
+      lastDeferral: status === 'deferred' ? lastDeferral : undefined,
       notification: {
         channel: notificationChannel,
         leadTime,
         customMinutes: leadTime === 'custom' ? Number(customMinutes) : undefined,
         targetPhone: (notificationChannel === 'whatsapp' || notificationChannel === 'both') ? targetPhone.trim() : undefined,
         targetEmail: (notificationChannel === 'email' || notificationChannel === 'both') ? targetEmail.trim() : undefined,
+        status: 'pending',
       },
       recurrence: {
-        rule: recurrenceRule,
+        rule: taskType === 'personal' ? recurrenceRule : 'none',
       },
     };
 
@@ -174,6 +320,8 @@ export const TaskFormModal: React.FC = () => {
     handleClose();
   };
 
+  const dateLabel = taskType === 'professional' ? 'Data Prevista de Entrega *' : 'Data *';
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in">
@@ -198,6 +346,30 @@ export const TaskFormModal: React.FC = () => {
 
           {/* Form Scrollable Body */}
           <form onSubmit={handleSave} className="flex-1 overflow-y-auto pr-1 py-4 space-y-4">
+            {/* Task Type Selector */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Tipo de Tarefa *
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {TASK_TYPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleTypeSelect(opt.id)}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      taskType === opt.id
+                        ? `${opt.activeClass} text-white shadow-sm`
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {opt.icon}
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Title */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -218,7 +390,7 @@ export const TaskFormModal: React.FC = () => {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Data *</span>
+                  <span>{dateLabel}</span>
                 </label>
                 <input
                   type="date"
@@ -270,6 +442,23 @@ export const TaskFormModal: React.FC = () => {
               )}
             </div>
 
+            {/* Type-specific fields */}
+            {taskType === 'congregational' && (
+              <CongregationalFields
+                value={congregational}
+                onChange={updates => setCongregational(prev => ({ ...prev, ...updates }))}
+              />
+            )}
+
+            {taskType === 'professional' && (
+              <ProfessionalFields
+                value={professional}
+                onChange={updates => setProfessional(prev => ({ ...prev, ...updates }))}
+                workTypes={workTypes}
+                onCreateWorkType={addWorkType}
+              />
+            )}
+
             {/* Priority & Category */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -282,10 +471,10 @@ export const TaskFormModal: React.FC = () => {
                   onChange={e => setPriority(e.target.value as Priority)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 transition cursor-pointer"
                 >
-                  <option value="low">Baixa</option>
-                  <option value="normal">Normal</option>
-                  <option value="high">Alta</option>
-                  <option value="urgent">Urgente</option>
+                  <option value="low">🟢 Baixa</option>
+                  <option value="normal">🔵 Normal</option>
+                  <option value="high">🟠 Alta</option>
+                  <option value="urgent">🔴 Urgente</option>
                 </select>
               </div>
 
@@ -313,17 +502,18 @@ export const TaskFormModal: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Status da Tarefa
               </label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {[
                   { val: 'pending', label: 'Pendente', color: 'text-blue-700 border-blue-200 bg-blue-50' },
-                  { val: 'in_progress', label: 'Em curso', color: 'text-amber-700 border-amber-200 bg-amber-50' },
-                  { val: 'completed', label: 'Concluída', color: 'text-emerald-700 border-emerald-200 bg-emerald-50' },
-                  { val: 'canceled', label: 'Cancelada', color: 'text-slate-600 border-slate-200 bg-slate-100' },
+                  { val: 'in_progress', label: 'Em execução', color: 'text-amber-700 border-amber-200 bg-amber-50' },
+                  { val: 'deferred', label: 'Adiado', color: 'text-purple-700 border-purple-200 bg-purple-50' },
+                  { val: 'completed', label: 'Concluído', color: 'text-emerald-700 border-emerald-200 bg-emerald-50' },
+                  { val: 'canceled', label: 'Cancelado', color: 'text-slate-600 border-slate-200 bg-slate-100' },
                 ].map(st => (
                   <button
                     key={st.val}
                     type="button"
-                    onClick={() => setStatus(st.val as Status)}
+                    onClick={() => handleStatusSelect(st.val as Status)}
                     className={`py-2 px-1 text-center rounded-xl text-[11px] font-bold border transition cursor-pointer ${
                       status === st.val
                         ? `${st.color} shadow-xs ring-2 ring-blue-500/20`
@@ -334,6 +524,12 @@ export const TaskFormModal: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {status === 'deferred' && lastDeferral && (
+                <p className="text-[11px] text-purple-700 mt-1.5 font-medium">
+                  Adiada de {lastDeferral.fromDate.split('-').reverse().join('/')} para{' '}
+                  {lastDeferral.toDate.split('-').reverse().join('/')} às {lastDeferral.toStartTime}.
+                </p>
+              )}
             </div>
 
             {/* Notification Configuration Card */}
@@ -446,25 +642,27 @@ export const TaskFormModal: React.FC = () => {
               )}
             </div>
 
-            {/* Recurrence Selector */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
-              <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Repeat className="w-3.5 h-3.5 text-blue-500" />
-                <span>Recorrência da Tarefa</span>
-              </label>
-              <select
-                value={recurrenceRule}
-                onChange={e => setRecurrenceRule(e.target.value as RecurrenceRule)}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 transition cursor-pointer"
-              >
-                <option value="none">Não se repete</option>
-                <option value="daily">Diariamente</option>
-                <option value="workdays">Dias úteis (Segunda a Sexta)</option>
-                <option value="weekly">Semanalmente</option>
-                <option value="biweekly">Quinzenalmente</option>
-                <option value="monthly">Mensalmente</option>
-              </select>
-            </div>
+            {/* Recurrence Selector - personal tasks only */}
+            {taskType === 'personal' && (
+              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Repeat className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Recorrência da Tarefa</span>
+                </label>
+                <select
+                  value={recurrenceRule}
+                  onChange={e => setRecurrenceRule(e.target.value as RecurrenceRule)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 transition cursor-pointer"
+                >
+                  <option value="none">Não se repete</option>
+                  <option value="daily">Diariamente</option>
+                  <option value="workdays">Dias úteis (Segunda a Sexta)</option>
+                  <option value="weekly">Semanalmente</option>
+                  <option value="biweekly">Quinzenalmente</option>
+                  <option value="monthly">Mensalmente</option>
+                </select>
+              </div>
+            )}
 
             {/* Description */}
             <div>
@@ -502,6 +700,27 @@ export const TaskFormModal: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Defer ("Adiado") Modal - enforces mandatory new date */}
+      <DeferTaskModal
+        isOpen={showDeferModal}
+        currentDate={date}
+        currentStartTime={startTime}
+        onConfirm={handleConfirmDefer}
+        onCancel={() => setShowDeferModal(false)}
+      />
+
+      {/* Type Change Confirmation - avoid silently discarding type-specific data */}
+      <ConfirmationModal
+        isOpen={!!pendingTypeChange}
+        title="Alterar Tipo da Tarefa"
+        message="Esta tarefa já possui dados específicos do tipo atual (local, pessoa, tipo de trabalho, etc). Ao mudar o tipo, esses dados serão descartados. Deseja continuar?"
+        confirmLabel="Continuar e Descartar"
+        cancelLabel="Manter Tipo Atual"
+        isDestructive
+        onConfirm={confirmTypeChange}
+        onCancel={() => setPendingTypeChange(null)}
+      />
 
       {/* Recurrence Choice Modal */}
       <ConfirmationModal

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import {
   calculateScheduledNotificationTime,
@@ -8,15 +8,19 @@ import {
   sendBrowserNotification
 } from '../services/notificationService';
 import { firestoreService } from '../services/firestoreService';
-import { DEFAULT_CATEGORIES, createDefaultSettings, computeTaskStatus } from '../services/storage';
+import { DEFAULT_CATEGORIES, DEFAULT_WORK_TYPES, createDefaultSettings, computeTaskStatus } from '../services/storage';
+import { validateTaskPayload } from '../utils/taskValidation';
+import { getPriorityLabel } from '../services/notificationService';
 import {
   ActiveTab,
   Category,
+  DeferralRecord,
   NotificationLog,
   Status,
   Task,
   TaskHistoryItem,
-  UserSettings
+  UserSettings,
+  WorkType
 } from '../types';
 
 export interface ToastMessage {
@@ -38,6 +42,7 @@ export interface PreviewNotificationData {
 interface TaskContextType {
   tasks: Task[];
   categories: Category[];
+  workTypes: WorkType[];
   settings: UserSettings;
   logs: NotificationLog[];
   activeTab: ActiveTab;
@@ -68,6 +73,7 @@ interface TaskContextType {
   deleteTask: (taskId: string) => Promise<void>;
   toggleComplete: (taskId: string) => Promise<void>;
   rescheduleTask: (taskId: string, newDate: string, newStartTime: string) => Promise<void>;
+  deferTask: (taskId: string, newDate: string, newStartTime: string, reason?: string) => Promise<void>;
   duplicateTask: (taskId: string) => Promise<void>;
   triggerNotificationNow: (taskId: string, channelOverride?: 'whatsapp' | 'email' | 'both') => Promise<void>;
 
@@ -75,6 +81,9 @@ interface TaskContextType {
   addCategory: (cat: Omit<Category, 'id'>) => Promise<Category>;
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+
+  // Professional work type Actions backed by Firestore (custom types persist for reuse)
+  addWorkType: (name: string) => Promise<WorkType>;
 
   // Settings backed by Firestore
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
@@ -97,6 +106,7 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [workTypes, setWorkTypes] = useState<WorkType[]>(DEFAULT_WORK_TYPES);
   const [settings, setSettings] = useState<UserSettings>(() => createDefaultSettings(user));
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   
@@ -124,16 +134,18 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!userId) {
       setTasks([]);
       setCategories(DEFAULT_CATEGORIES);
+      setWorkTypes(DEFAULT_WORK_TYPES);
       setLogs([]);
       return;
     }
 
     // Subscribe to real-time Tasks in Firestore
     const unsubTasks = firestoreService.subscribeTasks(userId, (loadedTasks) => {
-      // Auto-compute overdue status
+      // Auto-compute overdue status + backfill taskType for tasks created before this classification existed
       const processed = loadedTasks.map(t => {
-        const computed = computeTaskStatus(t);
-        return computed !== t.status ? { ...t, status: computed } : t;
+        const withType: Task = t.taskType ? t : { ...t, taskType: 'personal' };
+        const computed = computeTaskStatus(withType);
+        return computed !== withType.status ? { ...withType, status: computed } : withType;
       });
       setTasks(processed);
     });
@@ -141,6 +153,11 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Subscribe to real-time Categories in Firestore
     const unsubCats = firestoreService.subscribeCategories(userId, (loadedCats) => {
       setCategories(loadedCats.length > 0 ? loadedCats : DEFAULT_CATEGORIES);
+    });
+
+    // Subscribe to real-time professional work types in Firestore
+    const unsubWorkTypes = firestoreService.subscribeWorkTypes(userId, (loadedWorkTypes) => {
+      setWorkTypes(loadedWorkTypes.length > 0 ? loadedWorkTypes : DEFAULT_WORK_TYPES);
     });
 
     // Subscribe to real-time Notification Logs in Firestore
@@ -158,6 +175,7 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       unsubTasks();
       unsubCats();
+      unsubWorkTypes();
       unsubLogs();
       unsubSettings();
     };
@@ -175,72 +193,37 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // Background Notification Scheduler Loop
+  // Local Browser Notification Loop
+  // O envio real de WhatsApp/e-mail é feito por um processo externo (server/),
+  // que é a única fonte de verdade para notification.status. Este efeito só
+  // dispara a notificação do navegador, uma única vez por tarefa.
+  const firedBrowserNotifsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !settings.enableBrowserNotifications) return;
 
     const interval = setInterval(() => {
       const now = new Date().getTime();
-      
-      tasks.forEach(async (task) => {
+
+      tasks.forEach((task) => {
         if (
           task.notification.channel !== 'none' &&
-          task.notification.status === 'pending' &&
-          task.notification.scheduledFor
+          task.notification.scheduledFor &&
+          task.status !== 'completed' &&
+          task.status !== 'canceled' &&
+          !firedBrowserNotifsRef.current.has(task.id)
         ) {
           const scheduledTime = new Date(task.notification.scheduledFor).getTime();
-          if (scheduledTime <= now && task.status !== 'completed' && task.status !== 'canceled') {
-            // Trigger browser notification if enabled
-            if (settings.enableBrowserNotifications) {
-              sendBrowserNotification(task);
-            }
-
-            // Create and persist log entry in Firestore
-            const logEntry: NotificationLog = {
-              id: 'log-' + Date.now(),
-              userId,
-              taskId: task.id,
-              taskTitle: task.title,
-              channel: task.notification.channel === 'whatsapp' ? 'whatsapp' : task.notification.channel === 'email' ? 'email' : 'whatsapp',
-              recipient: task.notification.targetPhone || task.notification.targetEmail || settings.defaultPhone || settings.defaultEmail || 'Destinatário',
-              scheduledTime: task.notification.scheduledFor,
-              sentTime: new Date().toISOString(),
-              status: 'sent',
-              previewTitle: `Lembrete: ${task.title}`,
-              previewBody: formatWhatsAppMessage(task),
-            };
-
-            await firestoreService.saveLog(userId, logEntry);
-
-            // Update task notification status in Firestore
-            await firestoreService.updateTask(userId, task.id, {
-              notification: {
-                ...task.notification,
-                status: 'sent',
-                lastSentAt: new Date().toISOString(),
-              },
-              history: [
-                ...(task.history || []),
-                {
-                  id: 'h-' + Date.now(),
-                  timestamp: new Date().toISOString(),
-                  action: `Notificação enviada com sucesso via ${task.notification.channel}`,
-                }
-              ]
-            });
-
-            addToast({
-              type: 'info',
-              title: `🔔 Lembrete de Tarefa: ${task.title}`,
-              message: `Horário: ${task.startTime}. Enviado via ${task.notification.channel.toUpperCase()}.`,
-            });
+          if (scheduledTime <= now) {
+            firedBrowserNotifsRef.current.add(task.id);
+            sendBrowserNotification(task);
           }
         }
       });
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [userId, tasks, settings]);
+  }, [userId, tasks, settings.enableBrowserNotifications]);
 
   // Recurrence generator helper
   const createRecurrenceOccurrences = (baseTask: Task): Task[] => {
@@ -313,6 +296,12 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Add Task to real Firestore database
   const addTask = async (taskData: Omit<Task, 'id' | 'userId' | 'history' | 'createdAt' | 'updatedAt'>): Promise<Task> => {
+    const validationError = validateTaskPayload(taskData);
+    if (validationError) {
+      addToast({ type: 'error', title: 'Não foi possível salvar a tarefa', message: validationError });
+      throw new Error(validationError);
+    }
+
     const leadMins = getLeadTimeMinutes(taskData.notification.leadTime, taskData.notification.customMinutes);
     const scheduledIso = calculateScheduledNotificationTime(taskData.date, taskData.startTime, leadMins);
     
@@ -385,7 +374,22 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const target = tasks.find(t => t.id === taskId);
     if (!target) return;
 
+    const merged = { ...target, ...updates };
+    const validationError = validateTaskPayload(merged);
+    if (validationError) {
+      addToast({ type: 'error', title: 'Não foi possível salvar a tarefa', message: validationError });
+      throw new Error(validationError);
+    }
+
     const historyEntries: TaskHistoryItem[] = [...(target.history || [])];
+
+    if (updates.date && updates.date !== target.date) {
+      historyEntries.push({
+        id: 'h-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        action: `Data alterada de ${target.date.split('-').reverse().join('/')} para ${updates.date.split('-').reverse().join('/')}`,
+      });
+    }
 
     if (updates.startTime && updates.startTime !== target.startTime) {
       historyEntries.push({
@@ -395,26 +399,78 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
 
-    if (updates.status && updates.status !== target.status) {
+    if (updates.priority && updates.priority !== target.priority) {
       historyEntries.push({
         id: 'h-' + Date.now(),
         timestamp: new Date().toISOString(),
-        action: `Status alterado para "${updates.status === 'completed' ? 'Concluída' : updates.status === 'in_progress' ? 'Em andamento' : updates.status === 'canceled' ? 'Cancelada' : 'Pendente'}"`,
+        action: `Prioridade alterada de "${getPriorityLabel(target.priority)}" para "${getPriorityLabel(updates.priority)}"`,
       });
     }
 
-    let newNotification = updates.notification || target.notification;
-    if (
-      (updates.date || updates.startTime || updates.notification) &&
-      newNotification.channel !== 'none'
-    ) {
-      const d = updates.date || target.date;
-      const time = updates.startTime || target.startTime;
-      const leadMins = getLeadTimeMinutes(newNotification.leadTime, newNotification.customMinutes);
-      newNotification = {
-        ...newNotification,
-        scheduledFor: calculateScheduledNotificationTime(d, time, leadMins),
-      };
+    if (updates.taskType && updates.taskType !== target.taskType) {
+      historyEntries.push({
+        id: 'h-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        action: `Tipo de tarefa alterado de "${target.taskType || 'personal'}" para "${updates.taskType}"`,
+      });
+    }
+
+    if (updates.status && updates.status !== target.status) {
+      const statusLabel = (s: Status) =>
+        s === 'completed' ? 'Concluído' : s === 'in_progress' ? 'Em execução' : s === 'deferred' ? 'Adiado' : s === 'canceled' ? 'Cancelado' : 'Pendente';
+      historyEntries.push({
+        id: 'h-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        action: `Status alterado de "${statusLabel(target.status)}" para "${statusLabel(updates.status)}"`,
+      });
+    }
+
+    // Only recompute/reprogram the reminder when something that actually affects it changed
+    // (date, time or the notification config itself). Otherwise keep the existing
+    // scheduledFor/status/lastSentAt untouched so an already-sent reminder is not silently reset
+    // to "pending" (which would make it fire again) just because an unrelated field was edited.
+    let newNotification = target.notification;
+    const incomingNotification = updates.notification;
+    if (incomingNotification) {
+      const dateOrTimeChanged = (!!updates.date && updates.date !== target.date) || (!!updates.startTime && updates.startTime !== target.startTime);
+      const notificationConfigChanged =
+        incomingNotification.channel !== target.notification.channel ||
+        incomingNotification.leadTime !== target.notification.leadTime ||
+        incomingNotification.customMinutes !== target.notification.customMinutes ||
+        incomingNotification.targetPhone !== target.notification.targetPhone ||
+        incomingNotification.targetEmail !== target.notification.targetEmail;
+
+      if (dateOrTimeChanged || notificationConfigChanged) {
+        if (incomingNotification.channel !== 'none') {
+          const d = updates.date || target.date;
+          const time = updates.startTime || target.startTime;
+          const leadMins = getLeadTimeMinutes(incomingNotification.leadTime, incomingNotification.customMinutes);
+          newNotification = {
+            ...incomingNotification,
+            scheduledFor: calculateScheduledNotificationTime(d, time, leadMins),
+            status: 'pending',
+            lastSentAt: undefined,
+            errorMessage: undefined,
+          };
+        } else {
+          newNotification = {
+            ...incomingNotification,
+            scheduledFor: undefined,
+            status: 'canceled',
+            lastSentAt: undefined,
+            errorMessage: undefined,
+          };
+        }
+      } else {
+        // Preserve the real send state; only the plain config fields may differ trivially
+        newNotification = {
+          ...incomingNotification,
+          scheduledFor: target.notification.scheduledFor,
+          status: target.notification.status,
+          lastSentAt: target.notification.lastSentAt,
+          errorMessage: target.notification.errorMessage,
+        };
+      }
     }
 
     const updatedTarget: Task = {
@@ -540,6 +596,61 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  // Defer ("Adiado") a task to a new date/time. Distinct from a plain reschedule because it
+  // records the deferral (old -> new date), flips status to 'deferred' and re-programs
+  // notifications so no reminder fires for the old date.
+  const deferTask = async (taskId: string, newDate: string, newStartTime: string, reason?: string) => {
+    const target = tasks.find(t => t.id === taskId);
+    if (!target) return;
+
+    const deferral: DeferralRecord = {
+      fromDate: target.date,
+      fromStartTime: target.startTime,
+      toDate: newDate,
+      toStartTime: newStartTime,
+      reason,
+      timestamp: new Date().toISOString(),
+    };
+
+    const leadMins = getLeadTimeMinutes(target.notification.leadTime, target.notification.customMinutes);
+    const newScheduled = calculateScheduledNotificationTime(newDate, newStartTime, leadMins);
+
+    const historyItem: TaskHistoryItem = {
+      id: 'h-' + Date.now(),
+      timestamp: new Date().toISOString(),
+      action: `Tarefa adiada de ${target.date.split('-').reverse().join('/')} ${target.startTime} para ${newDate.split('-').reverse().join('/')} ${newStartTime}`,
+    };
+
+    const updated: Task = {
+      ...target,
+      date: newDate,
+      startTime: newStartTime,
+      status: 'deferred',
+      lastDeferral: deferral,
+      notification: {
+        ...target.notification,
+        scheduledFor: newScheduled,
+        status: target.notification.channel !== 'none' ? 'pending' : target.notification.status,
+        lastSentAt: undefined,
+        errorMessage: undefined,
+      },
+      history: [...(target.history || []), historyItem],
+      updatedAt: new Date().toISOString(),
+    };
+
+    setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+
+    if (userId) {
+      await firestoreService.saveTask(userId, updated);
+    }
+
+    addToast({
+      type: 'success',
+      title: '✓ Tarefa adiada com sucesso.',
+      message: `Nova data prevista: ${newDate.split('-').reverse().join('/')} às ${newStartTime}.`,
+    });
+  };
+
   // Duplicate Task in Firestore
   const duplicateTask = async (taskId: string) => {
     const orig = tasks.find(t => t.id === taskId);
@@ -659,6 +770,24 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addToast({ type: 'info', title: 'Categoria excluída.' });
   };
 
+  // Persist a new professional work type so it can be reused in future tasks (not just a temporary frontend value)
+  const addWorkType = async (name: string): Promise<WorkType> => {
+    const cleanName = name.trim();
+    const existing = workTypes.find(w => w.name.trim().toLowerCase() === cleanName.toLowerCase());
+    if (existing) return existing;
+
+    const newWorkType: WorkType = {
+      id: 'work-' + Date.now(),
+      name: cleanName,
+    };
+    setWorkTypes(prev => [...prev, newWorkType]);
+    if (userId) {
+      await firestoreService.saveWorkType(userId, newWorkType);
+    }
+    addToast({ type: 'success', title: 'Novo tipo de trabalho cadastrado.', message: cleanName });
+    return newWorkType;
+  };
+
   // Settings Actions backed by Firestore
   const updateSettings = async (updates: Partial<UserSettings>) => {
     const updated = { ...settings, ...updates };
@@ -705,6 +834,7 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         tasks,
         categories,
+        workTypes,
         settings,
         logs,
         activeTab,
@@ -727,11 +857,13 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteTask,
         toggleComplete,
         rescheduleTask,
+        deferTask,
         duplicateTask,
         triggerNotificationNow,
         addCategory,
         updateCategory,
         deleteCategory,
+        addWorkType,
         updateSettings,
         todayMetrics,
       }}

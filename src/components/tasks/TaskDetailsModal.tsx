@@ -15,11 +15,22 @@ import {
   Send,
   Phone,
   Mail,
-  CalendarClock
+  CalendarClock,
+  MapPin,
+  User,
+  Briefcase
 } from 'lucide-react';
 import { useTasks } from '../../contexts/TaskContext';
 import { getLeadTimeLabel, getPriorityLabel } from '../../services/notificationService';
 import { ConfirmationModal } from '../common/ConfirmationModal';
+import { DeferTaskModal } from './DeferTaskModal';
+import {
+  STATUS_COLORS,
+  STATUS_LABELS,
+  TASK_TYPE_COLORS,
+  TASK_TYPE_LABELS,
+  getCongregationalActivityLabel,
+} from '../../utils/taskTypeVisuals';
 
 export const TaskDetailsModal: React.FC = () => {
   const {
@@ -32,17 +43,29 @@ export const TaskDetailsModal: React.FC = () => {
     duplicateTask,
     triggerNotificationNow,
     rescheduleTask,
+    deferTask,
     categories,
+    workTypes,
   } = useTasks();
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRescheduleForm, setShowRescheduleForm] = useState(false);
   const [newRescheduleDate, setNewRescheduleDate] = useState('');
   const [newRescheduleTime, setNewRescheduleTime] = useState('');
+  const [showDeferModal, setShowDeferModal] = useState(false);
 
   if (!viewingTask) return null;
 
   const category = categories.find(c => c.id === viewingTask.categoryId);
+  const taskType = viewingTask.taskType || 'personal';
+  const workType = viewingTask.professional ? workTypes.find(w => w.id === viewingTask.professional?.workTypeId) : undefined;
+  const displayStatus = viewingTask.status;
+
+  const handleConfirmDefer = (newDate: string, newStartTime: string, reason?: string) => {
+    deferTask(viewingTask.id, newDate, newStartTime, reason);
+    setShowDeferModal(false);
+    setViewingTask(null);
+  };
 
   const handleEdit = () => {
     setEditingTask(viewingTask);
@@ -83,6 +106,23 @@ export const TaskDetailsModal: React.FC = () => {
           <div className="flex items-start justify-between pb-4 border-b border-slate-100 shrink-0">
             <div className="space-y-1 pr-4">
               <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${TASK_TYPE_COLORS[taskType].bg} ${TASK_TYPE_COLORS[taskType].text}`}>
+                  {TASK_TYPE_LABELS[taskType]}
+                </span>
+
+                {viewingTask.congregational && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700">
+                    {getCongregationalActivityLabel(viewingTask.congregational.activityType)}
+                  </span>
+                )}
+
+                {workType && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                    <Briefcase className="w-3 h-3" />
+                    {workType.name}
+                  </span>
+                )}
+
                 {category && (
                   <span
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-white shadow-xs"
@@ -107,24 +147,8 @@ export const TaskDetailsModal: React.FC = () => {
                   Prioridade {getPriorityLabel(viewingTask.priority)}
                 </span>
 
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                    viewingTask.status === 'completed'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : viewingTask.status === 'overdue'
-                      ? 'bg-rose-100 text-rose-700'
-                      : viewingTask.status === 'in_progress'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-blue-50 text-blue-700'
-                  }`}
-                >
-                  {viewingTask.status === 'completed'
-                    ? 'Concluída'
-                    : viewingTask.status === 'overdue'
-                    ? 'Atrasada'
-                    : viewingTask.status === 'in_progress'
-                    ? 'Em andamento'
-                    : 'Pendente'}
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${STATUS_COLORS[displayStatus].bg} ${STATUS_COLORS[displayStatus].text}`}>
+                  {STATUS_LABELS[displayStatus]}
                 </span>
               </div>
 
@@ -170,6 +194,54 @@ export const TaskDetailsModal: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Congregational-specific details */}
+            {viewingTask.congregational && (
+              <div className="space-y-2 p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-2xl text-[11px]">
+                {viewingTask.congregational.location && (
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span><strong>Local:</strong> {viewingTask.congregational.location}</span>
+                  </div>
+                )}
+                {viewingTask.congregational.visitedPerson && (
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span><strong>Pessoa visitada:</strong> {viewingTask.congregational.visitedPerson}</span>
+                  </div>
+                )}
+                {viewingTask.congregational.companion && (
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span><strong>Acompanhante:</strong> {viewingTask.congregational.companion}</span>
+                  </div>
+                )}
+                {viewingTask.congregational.personName && (
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span><strong>Nome:</strong> {viewingTask.congregational.personName}</span>
+                  </div>
+                )}
+                {viewingTask.congregational.theme && (
+                  <div><strong>Tema:</strong> {viewingTask.congregational.theme}</div>
+                )}
+                {viewingTask.congregational.summary && (
+                  <div><strong>Resumo:</strong> {viewingTask.congregational.summary}</div>
+                )}
+              </div>
+            )}
+
+            {/* Professional-specific details */}
+            {viewingTask.professional && (
+              <div className="space-y-2 p-3.5 bg-amber-50/50 border border-amber-100 rounded-2xl text-[11px]">
+                <div><strong>Data da solicitação:</strong> {viewingTask.professional.requestDate.split('-').reverse().join('/')}</div>
+                <div><strong>Solicitado por:</strong> {viewingTask.professional.requestedBy}</div>
+                {workType && <div><strong>Tipo de trabalho:</strong> {workType.name}</div>}
+                {viewingTask.professional.summary && (
+                  <div><strong>Resumo:</strong> {viewingTask.professional.summary}</div>
+                )}
+              </div>
+            )}
 
             {/* Description */}
             {viewingTask.description && (
@@ -351,11 +423,20 @@ export const TaskDetailsModal: React.FC = () => {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={handleOpenReschedule}
-                title="Reagendar"
-                className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-xl transition cursor-pointer"
+                onClick={() => setShowDeferModal(true)}
+                title="Adiar tarefa"
+                className="p-2 text-slate-600 hover:text-purple-600 hover:bg-purple-50 border border-slate-200 rounded-xl transition cursor-pointer"
               >
                 <CalendarClock className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenReschedule}
+                title="Reagendar (sem marcar como adiado)"
+                className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-xl transition cursor-pointer"
+              >
+                <Clock className="w-4 h-4" />
               </button>
 
               <button
@@ -398,6 +479,15 @@ export const TaskDetailsModal: React.FC = () => {
         isDestructive
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      {/* Defer ("Adiado") Modal */}
+      <DeferTaskModal
+        isOpen={showDeferModal}
+        currentDate={viewingTask.date}
+        currentStartTime={viewingTask.startTime}
+        onConfirm={handleConfirmDefer}
+        onCancel={() => setShowDeferModal(false)}
       />
     </>
   );

@@ -9,7 +9,8 @@ import {
   Settings,
   Bell,
   LogOut,
-  ChevronRight
+  ChevronRight,
+  Kanban
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTasks } from '../../contexts/TaskContext';
@@ -43,10 +44,15 @@ export const Sidebar: React.FC = () => {
     },
     {
       id: 'tasks',
-      label: 'Tarefas',
+      label: 'Minhas Tarefas',
       icon: <CheckSquare className="w-5 h-5" />,
       badge: pendingCount,
       badgeColor: overdueCount > 0 ? 'bg-rose-500' : 'bg-blue-600',
+    },
+    {
+      id: 'kanban',
+      label: 'Kanban',
+      icon: <Kanban className="w-5 h-5" />,
     },
     {
       id: 'reports',

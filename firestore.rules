@@ -35,6 +35,11 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      // User professional work types (custom + defaults)
+      match /workTypes/{workTypeId} {
+        allow read, write: if isOwner(userId);
+      }
+
       // User notification logs
       match /logs/{logId} {
         allow read, write: if isOwner(userId);

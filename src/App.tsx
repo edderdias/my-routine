@@ -9,6 +9,7 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { AgendaView } from './components/agenda/AgendaView';
 import { CalendarView } from './components/calendar/CalendarView';
 import { TasksListView } from './components/tasks/TasksListView';
+import { KanbanView } from './components/kanban/KanbanView';
 import { CategoriesView } from './components/categories/CategoriesView';
 import { ReportsView } from './components/reports/ReportsView';
 import { NotificationsCenterView } from './components/notifications/NotificationsCenterView';
@@ -56,6 +57,7 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'agenda' && <AgendaView />}
           {activeTab === 'calendar' && <CalendarView />}
           {activeTab === 'tasks' && <TasksListView />}
+          {activeTab === 'kanban' && <KanbanView />}
           {activeTab === 'categories' && <CategoriesView />}
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'notifications_center' && <NotificationsCenterView />}

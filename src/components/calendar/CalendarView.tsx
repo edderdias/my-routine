@@ -195,7 +195,7 @@ export const CalendarView: React.FC = () => {
           {calendarCells.map(cell => {
             const isSelected = cell.dateStr === selectedDate;
             const completedCount = cell.tasks.filter(t => t.status === 'completed').length;
-            const pendingCount = cell.tasks.filter(t => t.status === 'pending' || t.status === 'overdue').length;
+            const pendingCount = cell.tasks.filter(t => t.status === 'pending' || t.status === 'overdue' || t.status === 'in_progress' || t.status === 'deferred').length;
 
             return (
               <div

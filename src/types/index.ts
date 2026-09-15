@@ -1,6 +1,10 @@
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 
-export type Status = 'pending' | 'in_progress' | 'completed' | 'canceled' | 'overdue';
+export type Status = 'pending' | 'in_progress' | 'deferred' | 'completed' | 'canceled' | 'overdue';
+
+export type TaskType = 'personal' | 'congregational' | 'professional';
+
+export type CongregationalActivityType = 'visit' | 'meeting' | 'commission' | 'speech' | 'event';
 
 export type NotificationChannel = 'none' | 'whatsapp' | 'email' | 'both';
 
@@ -62,12 +66,46 @@ export interface TaskRecurrenceConfig {
   isOccurrence?: boolean;
 }
 
+// Congregational activity-specific data. Which fields are relevant depends on `activityType`:
+// meeting/event -> location + summary; commission -> location + personName; visit -> location + visitedPerson + companion + summary; speech -> location + theme + summary
+export interface CongregationalDetails {
+  activityType: CongregationalActivityType;
+  location?: string;
+  summary?: string;
+  personName?: string; // commission: person the commission concerns
+  visitedPerson?: string; // visit: who is being visited
+  companion?: string; // visit: who is accompanying
+  theme?: string; // speech: theme/title
+}
+
+export interface ProfessionalDetails {
+  requestDate: string; // YYYY-MM-DD - data da solicitação
+  requestedBy: string; // quem fez a solicitação
+  workTypeId: string; // references a WorkType id
+  summary?: string; // resumo da solicitação
+}
+
+export interface WorkType {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+}
+
+export interface DeferralRecord {
+  fromDate: string;
+  fromStartTime: string;
+  toDate: string;
+  toStartTime: string;
+  reason?: string;
+  timestamp: string; // ISO
+}
+
 export interface Task {
   id: string;
   userId: string;
   title: string;
   description: string;
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD - for professional tasks, this is the expected delivery date
   startTime: string; // HH:mm
   durationType: DurationType;
   durationMinutes?: number;
@@ -75,6 +113,10 @@ export interface Task {
   priority: Priority;
   status: Status;
   categoryId: string;
+  taskType: TaskType;
+  congregational?: CongregationalDetails;
+  professional?: ProfessionalDetails;
+  lastDeferral?: DeferralRecord;
   notification: TaskNotificationConfig;
   recurrence: TaskRecurrenceConfig;
   history: TaskHistoryItem[];
@@ -126,12 +168,13 @@ export interface NotificationLog {
   errorMessage?: string;
 }
 
-export type ActiveTab = 
-  | 'dashboard' 
-  | 'agenda' 
-  | 'calendar' 
-  | 'tasks' 
-  | 'categories' 
-  | 'reports' 
+export type ActiveTab =
+  | 'dashboard'
+  | 'agenda'
+  | 'calendar'
+  | 'tasks'
+  | 'kanban'
+  | 'categories'
+  | 'reports'
   | 'settings'
   | 'notifications_center';

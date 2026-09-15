@@ -1,4 +1,4 @@
-import { Category, NotificationLog, Priority, Status, Task, User, UserSettings } from '../types';
+import { Category, NotificationLog, Priority, Status, Task, User, UserSettings, WorkType } from '../types';
 import { calculateScheduledNotificationTime } from './notificationService';
 
 export interface UserAccount extends User {
@@ -25,6 +25,11 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-reuniao', name: 'Reunião', color: '#0284c7', iconName: 'Users', isDefault: true },
 ];
 
+export const DEFAULT_WORK_TYPES: WorkType[] = [
+  { id: 'work-maxus', name: 'Maxus', isDefault: true },
+  { id: 'work-okad', name: 'OKAD', isDefault: true },
+];
+
 export function createDefaultSettings(user?: User | null): UserSettings {
   return {
     defaultNotificationChannel: 'whatsapp',
@@ -46,7 +51,7 @@ export function createDefaultSettings(user?: User | null): UserSettings {
   };
 }
 
-// Compute dynamic status: if task is in past and still pending or in_progress, it is overdue
+// Compute dynamic status: if task is in past and still pending, in_progress or deferred, it is overdue
 export function computeTaskStatus(task: Task): Status {
   if (task.status === 'completed' || task.status === 'canceled') {
     return task.status;
